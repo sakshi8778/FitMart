@@ -4,12 +4,13 @@ const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const verifyFirebaseToken = require('../middleware/verifyFirebaseToken');
 
-// Helper: atomically release reserved stock (used for remove and clear)
-async function releaseReserved(productId, qty) {
-  await Product.findOneAndUpdate(
-    { productId: Number(productId) },
-    { $inc: { reserved: -qty } }
-  );
+// Helper: adjust product reserved count
+async function adjustReserved(productId, delta) {
+  const prod = await Product.findOne({ productId: Number(productId) });
+  if (!prod) throw new Error('Product not found');
+  prod.reserved = Math.max(0, (prod.reserved || 0) + delta);
+  await prod.save();
+  return prod;
 }
 
 // Helper: check that the token uid matches the userId in the route
@@ -57,26 +58,11 @@ router.post('/:userId/add', verifyFirebaseToken, async (req, res) => {
     const qty = Number(quantity);
     if (Number.isNaN(qty) || qty <= 0) return res.status(400).json({ error: 'quantity must be a positive number' });
 
-    // Atomic check-and-reserve: only increments reserved if sufficient stock is available.
-    // Eliminates the TOCTOU race condition where two concurrent requests both pass
-    // the availability check before either increments reserved.
-    const product = await Product.findOneAndUpdate(
-      {
-        productId: Number(productId),
-        $or: [
-          { stock: null },
-          { $expr: { $gte: [{ $subtract: ['$stock', { $add: ['$reserved', qty] }] }, 0] } }
-        ]
-      },
-      { $inc: { reserved: qty } },
-      { new: true }
-    );
+    const product = await Product.findOne({ productId: Number(productId) });
+    if (!product) return res.status(404).json({ error: 'Product not found' });
 
-    if (!product) {
-      const exists = await Product.findOne({ productId: Number(productId) });
-      if (!exists) return res.status(404).json({ error: 'Product not found' });
-      return res.status(400).json({ error: 'Insufficient stock available' });
-    }
+    const available = product.stock == null ? Infinity : (product.stock - (product.reserved || 0));
+    if (available < qty) return res.status(400).json({ error: 'Insufficient stock available' });
 
     let cart = await Cart.findOne({ userId });
     if (!cart) cart = new Cart({ userId, items: [] });
@@ -88,6 +74,7 @@ router.post('/:userId/add', verifyFirebaseToken, async (req, res) => {
       cart.items.push({ productId: Number(productId), quantity: qty });
     }
 
+    await adjustReserved(productId, qty);
     await cart.save();
     const fresh = await Cart.findOne({ userId });
     res.json(fresh);
@@ -123,7 +110,7 @@ router.post('/:userId/remove', verifyFirebaseToken, async (req, res) => {
     cart.items[itemIdx].quantity -= removeQty;
     if (cart.items[itemIdx].quantity <= 0) cart.items.splice(itemIdx, 1);
 
-    await releaseReserved(productId, removeQty);
+    await adjustReserved(productId, -removeQty);
     await cart.save();
     const fresh = await Cart.findOne({ userId });
     res.json(fresh);
@@ -147,7 +134,7 @@ router.delete('/:userId', verifyFirebaseToken, async (req, res) => {
     if (!cart) return res.status(404).json({ error: 'Cart not found' });
 
     for (const item of cart.items) {
-      await releaseReserved(item.productId, item.quantity);
+      await adjustReserved(item.productId, -item.quantity);
     }
 
     cart.items = [];
