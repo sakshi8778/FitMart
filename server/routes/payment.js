@@ -11,10 +11,12 @@ const verifyFirebaseToken = require("../middleware/verifyFirebaseToken");
 const { sendFirstPurchaseEmail } = require("../services/firstPurchaseEmailService");
 const { createOrder } = require("../services/orderService");
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+const razorpay = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
+  ? new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    })
+  : null;
 
 // ── Shared helper: release reserved stock for all cart items ───────────────
 // Mirrors the logic in server/routes/cart.js  DELETE /:userId

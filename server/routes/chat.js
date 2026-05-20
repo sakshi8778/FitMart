@@ -16,7 +16,7 @@ if (!process.env.GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Gemini Config
-const modelName = process.env.GEMINI_MODEL_NAME
+const modelName = process.env.GEMINI_MODEL_NAME || "gemini-2.5-flash";
 const model = genAI.getGenerativeModel({ model: modelName });
 
 const PRODUCT_KEYWORDS = ["protein", "supplement", "muscle", "gain", "whey", "creatine", "mass"];
@@ -56,7 +56,7 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    console.log("Processing message:", message.substring(0, 50));
+    console.log("Processing chat message:", { length: message.length, timestamp: Date.now() });
 
     const prompt = `${SYSTEM_PROMPT}\n\nUser: ${message}`;
 
