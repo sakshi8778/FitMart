@@ -12,6 +12,7 @@ const allowedOrigins = allowedOrigin
   .map((s) => s.trim())
   .filter(Boolean);
 const isDev = process.env.NODE_ENV !== "production";
+const allowAllOrigins = process.env.ALLOW_ALL_ORIGINS === "true" || isDev;
 
 if (isDev) {
   allowedOrigins.push("http://localhost:5173", "http://127.0.0.1:5173");
@@ -78,6 +79,11 @@ const paymentLimiter = rateLimit({
 app.use(
   cors({
     origin: function (origin, callback) {
+      if (allowAllOrigins) {
+        console.log(`[CORS] Allowing all origins for testing`);
+        return callback(null, true);
+      }
+
       if (allowedOrigins.includes(origin)) {
         console.log(`[CORS] Allowing whitelisted origin: ${origin}`);
         return callback(null, true);
@@ -152,6 +158,11 @@ app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
     return res.status(400).json({ error: "Invalid JSON payload" });
   }
+
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    return res.status(413).json({ error: "Payload too large" });
+  }
+
   console.error("Unhandled error:", err.message);
   res.status(500).json({ error: "Something went wrong" });
 });
