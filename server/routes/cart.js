@@ -68,8 +68,7 @@ router.post('/:userId/add', verifyFirebaseToken, ensureCartOwnership, validateRe
 
     await adjustReserved(productId, qty);
     await cart.save();
-    const fresh = await Cart.findOne({ userId });
-    res.json(fresh);
+    res.json(cart);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -103,8 +102,8 @@ router.post('/:userId/remove', verifyFirebaseToken, ensureCartOwnership, validat
 
     await adjustReserved(productId, -removeQty);
     await cart.save();
-    const fresh = await Cart.findOne({ userId });
-    res.json(fresh);
+
+    res.json(cart);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });

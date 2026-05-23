@@ -1,5 +1,14 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 const router = express.Router();
+
+const githubLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: "Too many GitHub stats requests, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Repository to proxy stats for
 const REPO = "parthbuilds-community/FitMart";
@@ -40,7 +49,7 @@ async function fetchPaginatedCount(url) {
   }
 }
 
-router.get("/stats", async (req, res) => {
+router.get("/stats", githubLimiter, async (req, res) => {
   // Serve from cache when fresh
   const now = Date.now();
   if (cache.stats && now - cache.ts < TTL_MS) {

@@ -1,11 +1,25 @@
 // server/routes/chat.js
 const express = require("express");
-const { GoogleGenerativeAI, GoogleGenerativeAIFetchError } = require("@google/generative-ai");
+const rateLimit = require("express-rate-limit");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Product = require("../models/Product");
+
 const { z } = require("zod");
+
+const { PRODUCT_KEYWORDS, SYSTEM_PROMPT, getFallbackResponse, PRODUCT_TEMPLATE } = require("../config/chatConfig");
+
 const router = express.Router();
 
-// Debug: Check if API key is loaded
+const chatLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: {
+    error: "Too many requests, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 console.log("API Key exists:", !!process.env.GEMINI_API_KEY);
 console.log("API Key prefix:", process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 15) + "..." : "MISSING");
 
@@ -16,9 +30,9 @@ if (!process.env.GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Gemini Config
 const modelName = process.env.GEMINI_MODEL_NAME || "gemini-2.5-flash";
 const model = genAI.getGenerativeModel({ model: modelName });
+
 
 const PRODUCT_KEYWORDS = ["protein", "supplement", "muscle", "gain", "whey", "creatine", "mass"];
 
@@ -61,6 +75,9 @@ const getFallbackResponse = (message) => {
 };
 
 router.post("/", async (req, res) => {
+
+router.post("/", chatLimiter, async (req, res) => {
+
   try {
     if (!req.body || typeof req.body !== 'object') {
       return res.status(400).json({ error: 'Invalid request', details: ['body: JSON object expected'] });
@@ -139,7 +156,6 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // Product recommendation logic with bold formatting
     const lower = message.toLowerCase();
     const wantsProduct = PRODUCT_KEYWORDS.some(kw => lower.includes(kw));
 
@@ -153,31 +169,13 @@ router.post("/", async (req, res) => {
         }).sort({ rating: -1 });
 
         if (product) {
-          // Build product recommendation with bold formatting
-          let productText = "\n\n**💪 Recommended Products**\n";
-          productText += "**" + product.name + "**";
-
-          if (product.brand) {
-            productText += " **by** **" + product.brand + "**";
-          }
-
-          if (product.price) {
-            productText += " **— ₹" + product.price.toLocaleString("en-IN") + "**";
-          }
-
-          if (product.rating) {
-            productText += " **(⭐" + product.rating + "/5)**";
-          }
-
-          reply += productText;
+          reply += PRODUCT_TEMPLATE(product);
         }
       } catch (productError) {
         console.error("Product lookup error:", productError);
-        // Don't fail the whole request if product lookup fails
       }
     }
 
-    // Add note if using fallback
     if (usedFallback) {
       reply += "\n\n*Note: Using enhanced knowledge base. For more detailed responses, ensure API key has available quota.*";
     }
@@ -187,7 +185,7 @@ router.post("/", async (req, res) => {
     console.error("Chat route error:", err);
     res.status(500).json({
       error: "Failed to generate response",
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+      details: process.env.NODE_ENV === "development" ? err.message : undefined,
     });
   }
 });

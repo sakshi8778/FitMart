@@ -24,11 +24,14 @@ import NonAdminRoute from "./components/NonAdminRoute";
 import WorkoutNotes from "./pages/NotesPage";
 import WorkoutTracker from "./pages/TrackerPage";
 import ExercisePage from "./pages/ExercisePage";
+import ErrorBoundary from "./components/ErrorBoundary";
 import LegalTerms from "./pages/LegalTerms";
 import LegalPrivacy from "./pages/LegalPrivacy";
+import DevAdminLogin from "./components/DevAdminLogin";
 
 export default function App() {
-  return (
+ return (
+  <ErrorBoundary>
     <BrowserRouter>
       <Routes>
         {/* Public routes (redirect admin users to admin dashboard) */}
@@ -50,6 +53,9 @@ export default function App() {
         <Route path="/privacy-policy" element={<NonAdminRoute><LegalPrivacy /></NonAdminRoute>} />
 
         {/* Admin routes (guarded) */}
+        {import.meta.env.MODE === 'development' && (
+          <Route path="/dev-login" element={<DevAdminLogin />} />
+        )}
         <Route
           path="/admin/dashboard"
           element={
@@ -110,6 +116,7 @@ export default function App() {
         {/* Redirect unknown routes to NotFound */}
         <Route path="*" element={<NotFound />} />
       </Routes>
-    </BrowserRouter>
+        </BrowserRouter>
+  </ErrorBoundary>
   );
 }

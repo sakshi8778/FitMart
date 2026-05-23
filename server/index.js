@@ -1,19 +1,25 @@
 // server/index.js
 require("dotenv").config();
+const rewardsRoutes = require("./routes/rewards");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const { RATE_LIMIT_WINDOW_MS, API_LIMIT_MAX, PAYMENT_LIMIT_MAX, DEFAULT_PORT } = require("./config/constants");
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || DEFAULT_PORT;
 const allowedOrigin = process.env.ALLOWED_ORIGIN || "";
 const allowedOrigins = allowedOrigin
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+
 const isDev = process.env.NODE_ENV !== "production";
 const allowAllOrigins = process.env.ALLOW_ALL_ORIGINS === "true" || isDev;
 
+
+
+const isDev = process.env.NODE_ENV !== "production";
 if (isDev) {
   allowedOrigins.push("http://localhost:5173", "http://127.0.0.1:5173");
 }
@@ -61,16 +67,16 @@ if (missingOptional.length > 0) {
 // ── Middleware ──────────────────────────────────────────────────────────────
 
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: API_LIMIT_MAX,
   message: { error: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const paymentLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: PAYMENT_LIMIT_MAX,
   message: { error: "Too many payment requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -118,6 +124,26 @@ app.use("/api/payment/verify-payment", paymentLimiter);
 // ── Database ────────────────────────────────────────────────────────────────
 require("./db");
 
+// ── Development: seed a local admin profile if configured ──────────────────
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    const UserProfile = require('./models/UserProfile');
+    const devEmail = process.env.DEV_ADMIN_EMAIL;
+    const devUid = process.env.DEV_ADMIN_UID;
+    if (devEmail || devUid) {
+      const query = devUid ? { userId: devUid } : { email: devEmail };
+      UserProfile.findOne(query).then((u) => {
+        if (!u && devUid) {
+          const up = new UserProfile({ userId: devUid, email: devEmail, name: 'Dev Admin' });
+          up.save().then(() => console.log('Seeded dev admin user profile')).catch(() => { });
+        }
+      }).catch(() => { });
+    }
+  } catch (err) {
+    console.warn('Dev seeding skipped:', err.message);
+  }
+}
+
 // ── Logger (after body parsing, before routes) ──────────────────────────────
 const logger = require("./middleware/logger");
 app.use(logger);
@@ -143,9 +169,16 @@ app.use("/api/bugs", require("./routes/bugs"));
 //                POST /verify-payment
 //                POST /clear-cart
 app.use("/api/payment", require("./routes/payment"));
+// FitRewards loyalty points routes
+app.use("/api/rewards", require("./routes/rewards"));
 
 // Nearby fitness centers
 app.use("/api/fitness-centers", require("./routes/fitnessCenters"));
+
+// Development-only auth helpers
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api/dev', require('./routes/devAuth'));
+}
 
 // Proxy GitHub stats to avoid client-side rate limits and CORS errors
 app.use("/api/github", require("./routes/github"));

@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
+
+// Your New Constant Import
+const { LOW_STOCK_THRESHOLD } = require('../config/constants');
+
+// Parth's New Security & Validation Imports
 const verifyFirebaseToken = require('../middleware/verifyFirebaseToken');
 const verifyAdmin = require('../middleware/verifyAdmin');
 const validateRequest = require('../middleware/validateRequest');
@@ -13,8 +18,28 @@ const { createProductSchema, updateProductSchema } = require('../validation/requ
  */
 router.get('/', async (req, res) => {
   try {
-    const products = await Product.find().sort({ productId: 1 });
-    res.json(products);
+    const page = parseInt(req.query.page);
+    const limit = parseInt(req.query.limit);
+
+    // If no pagination params provided, return all products (backward compatible)
+    if (!page || !limit) {
+      const products = await Product.find().sort({ productId: 1 });
+      return res.json(products);
+    }
+
+    // Pagination logic
+    const skip = (page - 1) * limit;
+    const [products, totalProducts] = await Promise.all([
+      Product.find().sort({ productId: 1 }).skip(skip).limit(limit),
+      Product.countDocuments(),
+    ]);
+
+    res.json({
+      data: products,
+      currentPage: page,
+      totalPages: Math.ceil(totalProducts / limit),
+      totalProducts,
+    });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -25,8 +50,6 @@ router.get('/', async (req, res) => {
  * @desc    Returns all products where available stock (stock - reserved) is below threshold of 5
  * @access  Public
  */
-// GET /api/products/low-stock - get products with low stock
-const LOW_STOCK_THRESHOLD = 5;
 
 router.get('/low-stock', async (req, res) => {
   try {
