@@ -19,7 +19,6 @@ const allowAllOrigins = process.env.ALLOW_ALL_ORIGINS === "true" || isDev;
 
 
 
-const isDev = process.env.NODE_ENV !== "production";
 if (isDev) {
   allowedOrigins.push("http://localhost:5173", "http://127.0.0.1:5173");
 }
