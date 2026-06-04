@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import AdminNavbar from '../components/AdminNavbar';
 import { useAuth } from '../auth/useAuth';
+import { getBugs, patchBugStatus } from '../utils/api/bugs';
+import Toast from '../components/Toast';
+import BugScreenshot from '../components/BugScreenshot';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -41,15 +44,17 @@ const Empty = () => (
 );
 
 // Mobile bug card
-const BugMobileCard = ({ bug, index, onClick, onStatusClick }) => (
+const BugMobileCard = ({ bug, index, onClick, onStatusClick, isUpdating }) => (
   <div
     role="button"
     tabIndex={0}
     onClick={onClick}
     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
     onMouseDown={(e) => e.preventDefault()}
+    aria-label={`View details for bug: ${bug.title}`}
     className="select-none flex items-start gap-3 py-3.5 border-b border-stone-100 last:border-0
-               cursor-pointer active:bg-stone-50 transition-colors"
+               cursor-pointer active:bg-stone-50 transition-colors
+               focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2 focus:ring-offset-white"
   >
     <span className="text-xs text-stone-300 w-5 shrink-0 text-center">{index + 1}</span>
 
@@ -60,13 +65,18 @@ const BugMobileCard = ({ bug, index, onClick, onStatusClick }) => (
         <p className="text-sm font-medium text-stone-700 truncate">{bug.title}</p>
         <button
           onClick={(e) => { e.stopPropagation(); onStatusClick && onStatusClick(bug); }}
-          className={`px-2 py-0.5 rounded-full text-[10px] font-medium capitalize shrink-0 focus:outline-none
-                     ${SEGMENT_STYLES[bug.status] || 'bg-stone-100 text-stone-600'}`}
+          disabled={isUpdating}
+          aria-label={`Change status for bug: ${bug.title}`}
+          className={`px-2 py-0.5 rounded-full text-[10px] font-medium capitalize shrink-0
+                     focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-1
+                     ${SEGMENT_STYLES[bug.status] || 'bg-stone-100 text-stone-600'}
+                     ${isUpdating ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           {bug.status}
         </button>
       </div>
       <p className="text-xs text-stone-500 truncate">{bug.description}</p>
+      {isUpdating && <p className="text-[10px] text-stone-400 mt-1 italic">Saving...</p>}
       <p className="text-[10px] text-stone-400 mt-1">{new Date(bug.createdAt).toLocaleString()}</p>
       <p className="text-[10px] text-stone-400 mt-1">{bug.reporterName || bug.reporterEmail || '—'}</p>
     </div>
@@ -83,6 +93,8 @@ export default function AdminBugs() {
   const [error, setError] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loadingBugs, setLoadingBugs] = useState(true);
+  const [updatingIds, setUpdatingIds] = useState(new Set());
+  const [toast, setToast] = useState(null);
   // Mobile status picker state: { id, status }
   const [mobilePicker, setMobilePicker] = useState(null);
 
@@ -96,28 +108,29 @@ export default function AdminBugs() {
     if (!mobilePicker) return;
     const id = mobilePicker.id;
     const prev = bugs.find(b => b._id === id)?.status;
+    
+    // Add to updating set
+    setUpdatingIds((cur) => new Set(cur).add(id));
+    
     // optimistic update
     setBugs((cur) => cur.map(b => (b._id === id ? { ...b, status: newStatus } : b)));
+    
     try {
       const token = await user.getIdToken();
-      const url = `${API}/api/bugs/${id}`;
-      const res = await fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (!res.ok) {
-        let body = null;
-        try { body = await res.json(); } catch (e) { body = await res.text(); }
-        console.error('PATCH failed', { url, status: res.status, body });
-        throw new Error(`update failed (${res.status})`);
-      }
+      await patchBugStatus(id, newStatus, token);
+      setToast({ message: 'Bug status updated successfully', type: 'success' });
       setMobilePicker(null);
     } catch (err) {
       console.error(err);
       // rollback
       setBugs((cur) => cur.map(b => (b._id === id ? { ...b, status: prev } : b)));
-      alert('Failed to update status');
+      setToast({ message: err.message || 'Failed to update status', type: 'error' });
+    } finally {
+      setUpdatingIds((cur) => {
+        const next = new Set(cur);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -128,10 +141,8 @@ export default function AdminBugs() {
     (async () => {
       try {
         const token = await user.getIdToken();
-        const res = await fetch(`${API}/api/bugs`, { headers: { Authorization: `Bearer ${token}` } });
-        if (!res.ok) throw new Error('Failed to fetch');
-        const body = await res.json();
-        if (mounted) setBugs(body.bugs || []);
+        const bugsData = await getBugs(token);
+        if (mounted) setBugs(bugsData);
       } catch (err) {
         console.error(err);
         setError('Unable to load bug reports');
@@ -293,6 +304,7 @@ export default function AdminBugs() {
                 index={index}
                 onClick={() => { }} // Add navigation if you have a detail view
                 onStatusClick={openMobilePicker}
+                isUpdating={updatingIds.has(bug._id)}
               />
             ))}
 
@@ -302,20 +314,45 @@ export default function AdminBugs() {
                   <p className="text-xs text-stone-400 mb-2">Change status</p>
                   <div className="flex gap-2">
                     <button onClick={() => handleMobileStatusChange('open')}
-                      className={`flex-1 py-2 rounded-full text-sm ${mobilePicker.status === 'open' ? 'bg-stone-900 text-white' : 'border border-stone-200 text-stone-700'}`}>
+                      disabled={updatingIds.has(mobilePicker.id)}
+                      aria-pressed={mobilePicker.status === 'open'}
+                      aria-label="Set status to Open"
+                      className={`flex-1 py-2 rounded-full text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2
+                                  ${mobilePicker.status === 'open' ? 'bg-stone-900 text-white' : 'border border-stone-200 text-stone-700'}
+                                  ${updatingIds.has(mobilePicker.id) ? 'opacity-50 cursor-not-allowed' : ''}`}>
                       Open
                     </button>
                     <button onClick={() => handleMobileStatusChange('in-progress')}
-                      className={`flex-1 py-2 rounded-full text-sm ${mobilePicker.status === 'in-progress' ? 'bg-stone-900 text-white' : 'border border-stone-200 text-stone-700'}`}>
+                      disabled={updatingIds.has(mobilePicker.id)}
+                      aria-pressed={mobilePicker.status === 'in-progress'}
+                      aria-label="Set status to In Progress"
+                      className={`flex-1 py-2 rounded-full text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2
+                                  ${mobilePicker.status === 'in-progress' ? 'bg-stone-900 text-white' : 'border border-stone-200 text-stone-700'}
+                                  ${updatingIds.has(mobilePicker.id) ? 'opacity-50 cursor-not-allowed' : ''}`}>
                       In Progress
                     </button>
                     <button onClick={() => handleMobileStatusChange('resolved')}
-                      className={`flex-1 py-2 rounded-full text-sm ${mobilePicker.status === 'resolved' ? 'bg-stone-900 text-white' : 'border border-stone-200 text-stone-700'}`}>
+                      disabled={updatingIds.has(mobilePicker.id)}
+                      aria-pressed={mobilePicker.status === 'resolved'}
+                      aria-label="Set status to Resolved"
+                      className={`flex-1 py-2 rounded-full text-sm
+                                  focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2
+                                  ${mobilePicker.status === 'resolved' ? 'bg-stone-900 text-white' : 'border border-stone-200 text-stone-700'}
+                                  ${updatingIds.has(mobilePicker.id) ? 'opacity-50 cursor-not-allowed' : ''}`}>
                       Resolved
                     </button>
                   </div>
+                  {updatingIds.has(mobilePicker.id) && (
+                    <p className="text-xs text-stone-400 text-center mt-2 italic">Saving...</p>
+                  )}
                   <div className="mt-3 text-center">
-                    <button onClick={closeMobilePicker} className="text-xs text-stone-500">Cancel</button>
+                    <button onClick={closeMobilePicker}
+                      disabled={updatingIds.has(mobilePicker.id)}
+                      className="text-xs text-stone-500 focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2 rounded px-2 py-1">
+                      Cancel
+                    </button>
                   </div>
                 </div>
               </div>
@@ -348,15 +385,22 @@ export default function AdminBugs() {
                   <tr key={bug._id}
                     role="button"
                     tabIndex={0}
+                    aria-label={`View details for bug: ${bug.title}`}
                     onClick={() => { }} // Add navigation if you have a detail view
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        // Add navigation if you have a detail view
+                      }
+                    }}
                     onMouseDown={(e) => {
                       // Allow interactive controls inside the row (select, input, button, textarea, a) to receive events.
                       const tag = (e.target && e.target.tagName || '').toLowerCase();
                       if (['select', 'option', 'input', 'button', 'a', 'textarea', 'svg', 'path'].includes(tag)) return;
                       e.preventDefault();
                     }}
-                    className="select-none hover:bg-stone-50 transition-colors cursor-pointer group">
+                    className="select-none hover:bg-stone-50 transition-colors cursor-pointer group
+                               focus:outline-none focus:ring-2 focus:ring-inset focus:ring-stone-900">
                     <td className="px-6 py-5 text-stone-300 text-xs">{index + 1}</td>
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-3">
@@ -376,39 +420,49 @@ export default function AdminBugs() {
                       <div className="flex items-center justify-center">
                         <select
                           value={bug.status}
+                          disabled={updatingIds.has(bug._id)}
+                          aria-label={`Change status for bug: ${bug.title}`}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={async (e) => {
                             const newStatus = e.target.value;
-                            // optimistic update
                             const prev = bug.status;
-                            bug.status = newStatus;
-                            setBugs((cur) => cur.map(b => (b._id === bug._id ? { ...b, status: newStatus } : b)));
+                            const id = bug._id;
+                            
+                            // Add to updating set
+                            setUpdatingIds((cur) => new Set(cur).add(id));
+                            
+                            // optimistic update
+                            setBugs((cur) => cur.map(b => (b._id === id ? { ...b, status: newStatus } : b)));
+                            
                             try {
                               const token = await user.getIdToken();
-                              const res = await fetch(`${API}/api/bugs/${bug._id}`, {
-                                method: 'PATCH',
-                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                body: JSON.stringify({ status: newStatus }),
-                              });
-                              if (!res.ok) {
-                                let body = null;
-                                try { body = await res.json(); } catch (e) { body = await res.text(); }
-                                console.error('PATCH failed', { url: `${API}/api/bugs/${bug._id}`, status: res.status, body });
-                                throw new Error(`update failed (${res.status})`);
-                              }
+                              await patchBugStatus(id, newStatus, token);
+                              setToast({ message: 'Bug status updated successfully', type: 'success' });
                             } catch (err) {
                               console.error(err);
                               // rollback
-                              setBugs((cur) => cur.map(b => (b._id === bug._id ? { ...b, status: prev } : b)));
-                              alert('Failed to update status');
+                              setBugs((cur) => cur.map(b => (b._id === id ? { ...b, status: prev } : b)));
+                              setToast({ message: err.message || 'Failed to update status', type: 'error' });
+                            } finally {
+                              setUpdatingIds((cur) => {
+                                const next = new Set(cur);
+                                next.delete(id);
+                                return next;
+                              });
                             }
                           }}
-                          className="text-xs border border-stone-200 rounded-full px-3 py-1 bg-white"
+                          className={`text-xs border border-stone-200 rounded-full px-3 py-1 bg-white
+                                      focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2
+                                      ${updatingIds.has(bug._id) ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           <option value="open">Open</option>
                           <option value="in-progress">In Progress</option>
                           <option value="resolved">Resolved</option>
                         </select>
                       </div>
+                      {updatingIds.has(bug._id) && (
+                        <p className="text-[10px] text-stone-400 text-center mt-1 italic">Saving...</p>
+                      )}
                     </td>
                     <td className="px-6 py-5 text-right text-stone-400 text-xs whitespace-nowrap">
                       {new Date(bug.createdAt).toLocaleDateString("en-IN", {
@@ -441,16 +495,12 @@ export default function AdminBugs() {
                               onClick={e => e.stopPropagation()}
                               className="inline-block"
                             >
-                              <img
-                                src={url}
-                                alt="Screenshot"
-                                className="w-12 h-8 object-cover rounded border border-stone-200 hover:opacity-80 transition-opacity"
-                              />
+                              <BugScreenshot src={url} title={bug.title} />
                             </a>
                           );
                         })()
                       ) : (
-                        <span className="text-xs text-stone-300">—</span>
+                        <BugScreenshot src={null} title={bug.title} />
                       )}
                     </td>
                   </tr>
@@ -460,6 +510,14 @@ export default function AdminBugs() {
           </div>
         </div>
       </div>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

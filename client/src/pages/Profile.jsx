@@ -4,6 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { auth } from "../auth/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { getAuthHeaders } from "../utils/getAuthHeaders";
+import {
+  getRewardTier,
+  getTierProgress,
+  formatRelativeDate,
+  getTransactionLabel,
+  getTransactionIcon,
+} from "../utils/rewardsUtils";
 import Navbar from "../components/Navbar";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -121,6 +128,9 @@ export default function Profile() {
   const [photoURL, setPhotoURL] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
+  const [rewardsData, setRewardsData] = useState(null);
+const [rewardsLoading, setRewardsLoading] = useState(false);
+const [rewardsError, setRewardsError] = useState("");
 
   useEffect(() => { document.title = "Profile – FitMart"; }, []);
 
@@ -152,6 +162,36 @@ export default function Profile() {
     });
     return () => unsub();
   }, [navigate]);
+    const fetchRewardsData = async () => {
+    try {
+      setRewardsLoading(true);
+      setRewardsError("");
+
+      const headers = await getAuthHeaders();
+
+      const response = await fetch(`${API}/api/rewards/me`, {
+        headers,
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch rewards data");
+      }
+
+      const data = await response.json();
+      setRewardsData(data);
+    } catch (error) {
+      setRewardsError(error.message || "Could not load FitRewards");
+    } finally {
+      setRewardsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "fitrewards" && !rewardsData) {
+      fetchRewardsData();
+    }
+  }, [activeTab]);
 
   // Fetch orders when orders tab is active
   useEffect(() => {
@@ -285,11 +325,11 @@ export default function Profile() {
   };
 
   const tabs = [
-    { id: "profile", label: "Personal Info" },
-    { id: "addresses", label: "Addresses" },
-    { id: "orders", label: "Orders" },
-  ];
-
+  { id: "profile", label: "Personal Info" },
+  { id: "addresses", label: "Addresses" },
+  { id: "fitrewards", label: "FitRewards" },
+  { id: "orders", label: "Orders" },
+];
   if (loading) return (
     <div className="min-h-screen bg-stone-50" style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <Navbar variant="home" menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
@@ -473,6 +513,14 @@ export default function Profile() {
               </div>
             )}
           </div>
+        )}
+                {/* ── FITREWARDS TAB ── */}
+        {activeTab === "fitrewards" && (
+          <FitRewardsTab
+            rewardsData={rewardsData}
+            rewardsLoading={rewardsLoading}
+            rewardsError={rewardsError}
+          />
         )}
 
         {/* ── ORDERS TAB ── */}
@@ -674,3 +722,135 @@ export default function Profile() {
     </div>
   );
 }
+const FitRewardsTab = ({ rewardsData, rewardsLoading, rewardsError }) => {
+  if (rewardsLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse rounded-3xl border border-stone-200 bg-white p-6">
+          <div className="h-5 w-32 rounded bg-stone-200" />
+          <div className="mt-5 h-12 w-40 rounded bg-stone-200" />
+          <div className="mt-4 h-4 w-24 rounded bg-stone-200" />
+          <div className="mt-6 h-2 w-full rounded-full bg-stone-200" />
+          <div className="mt-3 h-4 w-48 rounded bg-stone-200" />
+        </div>
+
+        <div className="space-y-3">
+          {[1, 2, 3].map((item) => (
+            <div
+              key={item}
+              className="animate-pulse rounded-2xl border border-stone-200 bg-white p-4"
+            >
+              <div className="flex items-center gap-4">
+                <div className="h-10 w-10 rounded-full bg-stone-200" />
+                <div className="flex-1">
+                  <div className="h-4 w-40 rounded bg-stone-200" />
+                  <div className="mt-2 h-3 w-24 rounded bg-stone-200" />
+                </div>
+                <div className="h-4 w-16 rounded bg-stone-200" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (rewardsError) {
+    return (
+      <div className="rounded-3xl border border-stone-200 bg-white p-6 text-stone-700">
+        {rewardsError}
+      </div>
+    );
+  }
+
+  const points =
+    rewardsData?.points ??
+    rewardsData?.balance ??
+    rewardsData?.currentPoints ??
+    0;
+
+  const transactions = rewardsData?.transactions || [];
+
+  const { currentTier } = getRewardTier(points);
+  const tierProgress = getTierProgress(points);
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-stone-500">
+              Current FitRewards Points
+            </p>
+
+            <h2 className="mt-2 font-serif text-5xl font-semibold text-stone-900">
+              {points}
+            </h2>
+          </div>
+
+          <span className="w-fit rounded-full bg-stone-900 px-4 py-1 text-sm font-medium text-white">
+            {currentTier.name}
+          </span>
+        </div>
+
+        <div className="mt-6">
+          <div className="h-2 overflow-hidden rounded-full bg-stone-200">
+            <div
+              className="h-full rounded-full bg-stone-900 transition-all"
+              style={{ width: `${tierProgress.progress}%` }}
+            />
+          </div>
+
+          <p className="mt-3 text-sm text-stone-600">{tierProgress.label}</p>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+        <h3 className="text-lg font-semibold text-stone-900">
+          Transaction History
+        </h3>
+
+        {transactions.length === 0 ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-8 text-center">
+            <div className="text-4xl">⭐</div>
+            <h4 className="mt-3 text-base font-semibold text-stone-900">
+              No rewards yet
+            </h4>
+            <p className="mt-2 text-sm text-stone-600">
+              Make your first purchase or complete rewards activity to start
+              earning FitRewards points.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-5 space-y-3">
+            {transactions.map((transaction) => (
+              <div
+                key={transaction._id || transaction.id}
+                className="flex items-center gap-4 rounded-2xl border border-stone-200 p-4"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-stone-100 text-lg">
+                  {getTransactionIcon(transaction)}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-stone-900">
+                    {getTransactionLabel(transaction)}
+                  </p>
+                  <p className="text-xs text-stone-500">
+                    {formatRelativeDate(
+                      transaction.createdAt || transaction.date
+                    )}
+                  </p>
+                </div>
+
+                <p className="text-sm font-semibold text-stone-900">
+                  +{transaction.points || transaction.amount || 0} pts
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

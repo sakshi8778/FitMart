@@ -1,4 +1,5 @@
 // src/pages/AdminDashboard.jsx
+// src/pages/AdminDashboard.jsx
 import { useState, useEffect } from "react";
 import AdminNavbar from "../components/AdminNavbar";
 import { getAuthHeaders } from "../utils/getAuthHeaders";

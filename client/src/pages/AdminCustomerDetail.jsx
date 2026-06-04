@@ -20,9 +20,11 @@ const STATUS_STYLES = {
 };
 
 // ── Mirrors Navbar.jsx avatar pattern ─────────────────────────────────────
-const CustomerAvatar = ({ name, photoURL, size = "16" }) => (
-  <div className={`w-${size} h-${size} rounded-full overflow-hidden shrink-0
-                   bg-stone-200 flex items-center justify-center`}>
+const CustomerAvatar = ({ name, photoURL, sizePx = 64 }) => (
+  <div
+    style={{ width: sizePx, height: sizePx }}
+    className="rounded-full overflow-hidden shrink-0 bg-stone-200 flex items-center justify-center"
+  >
     {photoURL ? (
       <img
         src={photoURL}
@@ -56,8 +58,11 @@ const MobileOrderCard = ({ order, expanded, onToggle, onDownload, productMap }) 
     {/* Card header — tappable */}
     <button
       onClick={() => onToggle(order._id)}
+      aria-expanded={expanded}
+      aria-controls={`mobile-order-items-${order._id}`}
+      aria-label={`Order ${order._id}, ${fmt(order.total)}, ${order.status}. ${expanded ? "Collapse" : "Expand"} details`}
       className="w-full text-left px-4 py-4 bg-white active:bg-stone-50
-                 flex items-start justify-between gap-3"
+                 flex items-start justify-between gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-inset"
     >
       <div className="min-w-0 flex-1">
         <p className="text-[10px] font-mono text-stone-400 truncate mb-1.5">
@@ -91,7 +96,7 @@ const MobileOrderCard = ({ order, expanded, onToggle, onDownload, productMap }) 
 
     {/* Expanded items */}
     {expanded && (
-      <div className="border-t border-stone-100 bg-stone-50 divide-y divide-stone-100">
+      <div id={`mobile-order-items-${order._id}`} className="border-t border-stone-100 bg-stone-50 divide-y divide-stone-100">
         {order.items.map((item, idx) => {
           const prod = productMap?.[item.productId] || {};
           const name = prod.name || `Product #${item.productId}`;
@@ -114,7 +119,8 @@ const MobileOrderCard = ({ order, expanded, onToggle, onDownload, productMap }) 
         <div className="px-4 py-3">
           <button
             onClick={(e) => { e.stopPropagation(); onDownload(order); }}
-            className="text-xs border border-stone-300 text-stone-700 px-4 py-2 rounded-full hover:bg-stone-100 transition-colors"
+            aria-label={`Download invoice for order ${order._id}`}
+            className="text-xs border border-stone-300 text-stone-700 px-4 py-2 rounded-full hover:bg-stone-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
           >
             Download Invoice
           </button>
@@ -305,23 +311,7 @@ export default function AdminCustomerDetail() {
             </div>
           ) : (
             <div className="flex items-center gap-4 md:gap-5">
-              {/* Avatar — slightly smaller on mobile */}
-              <div className="w-14 h-14 md:w-16 md:h-16 rounded-full overflow-hidden shrink-0
-                              bg-stone-200 flex items-center justify-center">
-                {customerPhoto ? (
-                  <img
-                    src={customerPhoto}
-                    alt={customerName || "avatar"}
-                    className="w-full h-full object-cover"
-                    referrerPolicy="no-referrer"
-                    onError={e => { e.currentTarget.style.display = "none"; }}
-                  />
-                ) : (
-                  <span className="text-xl md:text-2xl font-medium text-stone-500">
-                    {(customerName?.[0] || "?").toUpperCase()}
-                  </span>
-                )}
-              </div>
+              <CustomerAvatar name={customerName} photoURL={customerPhoto} sizePx={64} />
 
               <div className="min-w-0 flex-1">
                 {/* Name + segment badge */}
@@ -514,7 +504,11 @@ export default function AdminCustomerDetail() {
                     <tr
                       key={order._id}
                       onClick={() => toggleOrder(order._id)}
-                      className="hover:bg-stone-50 transition-colors cursor-pointer"
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleOrder(order._id); } }}
+                      tabIndex={0}
+                      aria-expanded={!!expanded[order._id]}
+                      aria-controls={`order-items-${order._id}`}
+                      className="hover:bg-stone-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-inset"
                     >
                       <td className="px-6 py-4 text-stone-400 text-xs font-mono">
                         <span className="mr-2 text-stone-300">
@@ -548,7 +542,8 @@ export default function AdminCustomerDetail() {
                       <td className="px-6 py-4 text-center">
                         <button
                           onClick={(e) => { e.stopPropagation(); downloadInvoice(order); }}
-                          className="text-xs border border-stone-300 text-stone-700 px-3 py-1 rounded-full hover:bg-stone-100 transition-colors"
+                          aria-label={`Download invoice for order ${order._id}`}
+                          className="text-xs border border-stone-300 text-stone-700 px-3 py-1 rounded-full hover:bg-stone-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-400"
                         >
                           Download
                         </button>
@@ -559,7 +554,7 @@ export default function AdminCustomerDetail() {
                       const prod = productMap?.[item.productId] || {};
                       const name = prod.name || `Product #${item.productId}`;
                       return (
-                        <tr key={`${order._id}-${idx}`} className="bg-stone-50 border-t border-stone-100">
+                        <tr key={`${order._id}-${idx}`} id={idx === 0 ? `order-items-${order._id}` : undefined} className="bg-stone-50 border-t border-stone-100">
                           <td className="pl-14 pr-6 py-2.5 text-stone-500 text-xs">└ {name}</td>
                           <td className="px-6 py-2.5 text-center text-stone-400 text-xs">×{item.quantity}</td>
                           <td className="px-6 py-2.5" />
