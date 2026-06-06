@@ -277,8 +277,7 @@ export default function PaymentPage() {
         setPaying(false);
 
         showError(
-          `Payment failed: ${
-            resp.error?.description || "Unknown error"
+          `Payment failed: ${resp.error?.description || "Unknown error"
           }`
         );
       });
@@ -472,41 +471,39 @@ export default function PaymentPage() {
         </p>
 
         {/* Demo bypass */}
-        {import.meta.env.MODE !== "production" && (
-          <div className="mt-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex-1 h-px bg-stone-200" />
+        <div className="mt-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex-1 h-px bg-stone-200" />
 
-              <span className="text-[10px] tracking-[0.15em] uppercase text-stone-400 whitespace-nowrap">
-                Demo / Testing
-              </span>
+            <span className="text-[10px] tracking-[0.15em] uppercase text-stone-400 whitespace-nowrap">
+              Demo / Testing
+            </span>
 
-              <div className="flex-1 h-px bg-stone-200" />
-            </div>
-
-            <button
-              onClick={handleDemoSuccess}
-              disabled={busy}
-              className="w-full border border-stone-300 text-stone-600 text-sm px-8 py-4
-                       rounded-full hover:bg-stone-900 hover:text-white hover:border-stone-900
-                       transition-all disabled:opacity-50 disabled:cursor-not-allowed
-                       flex items-center justify-center gap-2 min-h-13 active:scale-[0.98]"
-            >
-              {bypassing ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Processing…
-                </>
-              ) : (
-                "Simulate Successful Payment ✓"
-              )}
-            </button>
-
-            <p className="text-[10px] text-stone-400 text-center mt-2">
-              Skips Razorpay · clears cart · goes to confirmation
-            </p>
+            <div className="flex-1 h-px bg-stone-200" />
           </div>
-        )}
+
+          <button
+            onClick={handleDemoSuccess}
+            disabled={busy}
+            className="w-full border border-stone-300 text-stone-600 text-sm px-8 py-4
+                     rounded-full hover:bg-stone-900 hover:text-white hover:border-stone-900
+                     transition-all disabled:opacity-50 disabled:cursor-not-allowed
+                     flex items-center justify-center gap-2 min-h-13 active:scale-[0.98]"
+          >
+            {bypassing ? (
+              <>
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Processing…
+              </>
+            ) : (
+              "Simulate Successful Payment ✓"
+            )}
+          </button>
+
+          <p className="text-[10px] text-stone-400 text-center mt-2">
+            Skips Razorpay · clears cart · goes to confirmation
+          </p>
+        </div>
 
         {/* Back button */}
         <button
